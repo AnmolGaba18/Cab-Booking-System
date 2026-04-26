@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Cab Booking System</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+
+body{
+margin:0;
+font-family:Segoe UI;
+display:flex;
+height:100vh;
+}
+
+.sidebar{
+width:320px;
+background:#0d47a1;
+color:white;
+padding:20px;
+overflow:auto;
+}
+
+.sidebar input{
+width:95%;
+padding:7px;
+margin:6px 0;
+border:none;
+border-radius:6px;
+}
+
+.sidebar button{
+width:100%;
+padding:9px;
+margin-top:8px;
+border:none;
+background:#1565c0;
+color:white;
+border-radius:6px;
+cursor:pointer;
+}
+
+.sidebar button:hover{
+background:#1e88e5;
+}
+
+.card{
+background:white;
+color:black;
+padding:12px;
+border-radius:10px;
+margin-top:15px;
+}
+
+.main{
+flex:1;
+display:flex;
+flex-direction:column;
+}
+
+header{
+background:#0d47a1;
+color:white;
+padding:15px;
+text-align:center;
+font-size:22px;
+}
+
+#map{
+flex:1;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="sidebar">
+
+<h2>Cab Booking Panel</h2>
+
+
+<h4>Add User</h4>
+
+<input id="userId" placeholder="User ID">
+<input id="userName" placeholder="User Name">
+
+<button onclick="addUser()">Add User</button>
+
+
+<h4>Add Driver</h4>
+
+<input id="driverName" placeholder="Driver Name">
+<input id="driverLat" placeholder="Latitude">
+<input id="driverLng" placeholder="Longitude">
+
+<button onclick="enableDriverSelection()">Select Driver Location</button>
+<button onclick="addDriver()">Add Driver</button>
+
+
+<h4>Driver Availability</h4>
+
+<input id="statusDriverId" placeholder="Driver ID">
+
+<button onclick="setOnline()">Set Online</button>
+<button onclick="setOffline()">Set Offline</button>
+
+
+<h4>Ride Request</h4>
+
+<input id="rideUserId" placeholder="User ID">
+<input id="pickupLat" placeholder="Pickup Latitude">
+<input id="pickupLng" placeholder="Pickup Longitude">
+
+<button onclick="enablePickupSelection()">Select Pickup Location</button>
+<button onclick="findNearestDriver()">Find Nearest Driver</button>
+<button onclick="requestRide()">Request Ride</button>
+
+
+<div class="card">
+
+<b>Fare Breakdown</b><br><br>
+
+Base Fare: ₹40<br>
+Distance: <span id="distanceText">0</span> km<br>
+Rate: ₹12/km<br>
+ETA: <span id="etaText">0</span> minutes<br><br>
+
+<b>Total Fare: ₹<span id="fareText">0</span></b>
+
+</div>
+
+</div>
+
+
+<div class="main">
+
+<header>
+Cab Booking System
+</header>
+
+<div id="map"></div>
+
+</div>
+
+
+<script>
+
+let BASE_FARE = 40;
+let PER_KM = 12;
+
+let map = L.map('map').setView([30.3165,78.0322],13);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+).addTo(map);
+
+
+let carIcon = L.icon({
+iconUrl:"https://cdn-icons-png.flaticon.com/512/3202/3202926.png",
+iconSize:[42,42]
+});
+
+let userIcon = L.icon({
+iconUrl:"https://cdn-icons-png.flaticon.com/512/1077/1077114.png",
+iconSize:[42,42]
+});
+
+
+let selectingDriver=false;
+let selectingPickup=false;
+
+let driverMarkers={};
+
+
+map.on('click',function(e){
+
+if(selectingDriver){
+
+driverLat.value=e.latlng.lat;
+driverLng.value=e.latlng.lng;
+
+selectingDriver=false;
+
+}
+
+else if(selectingPickup){
+
+pickupLat.value=e.latlng.lat;
+pickupLng.value=e.latlng.lng;
+
+selectingPickup=false;
+
+}
+
+});
+
+
+function enableDriverSelection(){
+
+selectingDriver=true;
+selectingPickup=false;
+
+}
+
+function enablePickupSelection(){
+
+selectingPickup=true;
+selectingDriver=false;
+
+}
+
+
+function addUser(){
+
+fetch(`/user/add?userId=${userId.value}&name=${userName.value}`,{
+method:"POST"
+})
+.then(()=>alert("User stored successfully"));
+
+}
+
+
+function loadDrivers(){
+
+fetch("/driver/all")
+
+.then(res=>res.json())
+
+.then(drivers=>{
+
+drivers.forEach(driver=>{
+
+let marker=L.marker(
+[driver.latitude,driver.longitude],
+{icon:carIcon}
+).addTo(map);
+
+marker.bindPopup(
+"Driver: " + driver.name +
+"<br>Status: " + (driver.available ? "Online" : "Offline")
+);
+
+driverMarkers[driver.id]=marker;
+
+});
+
+});
+
+}
+
+
+function loadUsers(){
+
+fetch("/user/all")
+
+.then(res=>res.json())
+
+.then(users=>{
+
+users.forEach(user=>{
+
+if(user.latitude && user.longitude){
+
+L.marker(
+[user.latitude,user.longitude],
+{icon:userIcon}
+).addTo(map)
+.bindPopup("User: " + user.name);
+
+}
+
+});
+
+});
+
+}
+
+
+function addDriver(){
+
+fetch("/driver/add",{
+
+method:"POST",
+
+headers:{
+"Content-Type":"application/json"
+},
+
+body:JSON.stringify({
+
+name:driverName.value,
+latitude:driverLat.value,
+longitude:driverLng.value,
+available:true
+
+})
+
+})
+.then(()=>location.reload());
+
+}
+
+
+function setOnline(){
+
+fetch(`/driver/status?id=${statusDriverId.value}&available=true`,{
+method:"PUT"
+})
+.then(()=>alert("Driver set to online"));
+
+}
+
+
+function setOffline(){
+
+fetch(`/driver/status?id=${statusDriverId.value}&available=false`,{
+method:"PUT"
+})
+.then(()=>alert("Driver set to offline"));
+
+}
+
+
+function calculateDistance(lat1,lng1,lat2,lng2){
+
+let R=6371;
+
+let dLat=(lat2-lat1)*Math.PI/180;
+let dLng=(lng2-lng1)*Math.PI/180;
+
+let a=
+Math.sin(dLat/2)*Math.sin(dLat/2)+
+Math.cos(lat1*Math.PI/180)*
+Math.cos(lat2*Math.PI/180)*
+Math.sin(dLng/2)*Math.sin(dLng/2);
+
+let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+
+return R*c;
+
+}
+
+
+function findNearestDriver(){
+
+fetch(`/ride/nearest-driver?lat=${pickupLat.value}&lng=${pickupLng.value}`)
+
+.then(res=>res.json())
+
+.then(driver=>{
+
+let distanceKM = calculateDistance(
+pickupLat.value,
+pickupLng.value,
+driver.latitude,
+driver.longitude
+);
+
+document.getElementById("distanceText").innerText =
+distanceKM.toFixed(2);
+
+let eta = (distanceKM/30)*60;
+
+document.getElementById("etaText").innerText =
+eta.toFixed(1);
+
+let fare = BASE_FARE + (distanceKM * PER_KM);
+
+document.getElementById("fareText").innerText =
+fare.toFixed(2);
+
+driverMarkers[driver.id]
+.bindPopup(
+"Nearest Driver for User " + rideUserId.value +
+"<br>Driver: " + driver.name +
+"<br>Distance: " + distanceKM.toFixed(2) + " km"
+)
+.openPopup();
+
+});
+
+}
+
+
+function requestRide(){
+
+fetch(`/ride/request?userId=${rideUserId.value}&lat=${pickupLat.value}&lng=${pickupLng.value}`,{
+method:"POST"
+})
+.then(res=>res.json())
+.then(data=>{
+
+document.getElementById("etaText").innerText =
+data.eta.toFixed(1);
+
+document.getElementById("fareText").innerText =
+data.fare.toFixed(2);
+
+L.marker(
+[pickupLat.value,pickupLng.value],
+{icon:userIcon}
+).addTo(map);
+
+});
+
+}
+
+
+loadDrivers();
+loadUsers();
+
+</script>
+
+</body>
+</html>
